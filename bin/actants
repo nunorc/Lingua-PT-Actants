@@ -1,0 +1,30 @@
+#!/usr/bin/perl
+# PODNAME: actants
+# ABSTRACT: command line interface to Lingua::PT::Actants
+
+use warnings;
+use strict;
+
+use Lingua::PT::Actants;
+use Path::Tiny;
+use utf8::all;
+
+my $input;
+
+my $file = shift;
+if ($file) {
+  $input = path($file)->slurp_raw;
+}
+else {
+  $input = join('', <STDIN>);
+}
+
+unless ($input) {
+  print "Usage: actants <input>\n";
+  exit;
+}
+
+my $o = Lingua::PT::Actants->new;
+my @acts = $o->actants( conll => $input );
+$o->pp_acts(@acts);
+
