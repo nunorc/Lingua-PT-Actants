@@ -1,6 +1,6 @@
 # NAME
 
-Lingua::PT::Actants - compute verb actants for portuguese
+Lingua::PT::Actants - compute verb actants for Portuguese
 
 # VERSION
 
@@ -9,7 +9,7 @@ version 0.01
 # SYNOPSIS
 
     # using as a library
-    use Lingua::PT::Actants;;
+    use Lingua::PT::Actants;
     my $a = Lingua::PT::Actants->new;
     my @actants = $a->actants($input);
 
@@ -30,8 +30,8 @@ version 0.01
 # DESCRIPTION
 
 This module implements an algorithm that computes a sorted rank of tokens
-where the score measures the propensity of the token being an actant
-for the verb to which is related.
+where the score measures the propensity of each token to be an actant
+for the verb with which is related.
 
 # FUNCTIONS
 
