@@ -10,8 +10,9 @@ version 0.01
 
     # using as a library
     use Lingua::PT::Actants;
-    my $a = Lingua::PT::Actants->new;
-    my @actants = $a->actants($input);
+    my $a = Lingua::PT::Actants->new( conll => $input );
+    my @cores = $a->acts_cores;
+    my @actants = $a->actatans;
 
     # example from the command line
     $ cat examples/input.txt 
@@ -20,32 +21,46 @@ version 0.01
     3   tem     _   VERB    VERB    _   0   ROOT    _   _
     4   razão   _   NOUN    NOUN    _   3   dobj    _   _
     5   .       _   PUNCT   PUNCT   _   3   punct   _   _
-    $ cat examples/input.txt | perl -Ilib bin/actants 
-    Actants rank for verb: tem
-     0.526990 | Maria
-     0.461116 | razão
-     0.008234 | .
-     0.003660 | A
+    $ cat examples/input.txt | actants
+    Sentence: A Maria tem razão .
+    # Actants syntagma cores
+     Verb: tem
+      0.526990 | Maria
+      0.461116 | razão
+      0.008234 | .
+      0.003660 | A
+    # Actants syntagmas
+     Verb: tem
+      A1: A Maria
+      A2: razão
 
 # DESCRIPTION
 
 This module implements an algorithm that computes a sorted rank of tokens
-where the score measures the propensity of each token to be an actant
-for the verb with which is related.
+where the score measures the propensity of the token being an actant
+for the verb to which is related.
 
 # FUNCTIONS
 
 ## new
 
-Create a new object.
+Create a new object, pass as argument the input text in CONLL format.
+
+## acts\_cores
+
+Compute the core (a token) of the actants syntagmas as rank sorted by score.
+
+## pp\_acts\_cores
+
+Pretty print actants cores, mainly to be used by the command line interface.
 
 ## actants
 
 Compute actants for a sentence, returns a list of actants found.
 
-## pp\_acts
+## pp\_acts\_syntagmas
 
-Pretty print actants list, mainly to be used by the command line interface.
+Pretty print actants syntagmas, mainly to be used by the command line interface.
 
 # AUTHOR
 

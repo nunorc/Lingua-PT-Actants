@@ -24,7 +24,12 @@ unless ($input) {
   exit;
 }
 
-my $o = Lingua::PT::Actants->new;
-my @acts = $o->actants( conll => $input );
-$o->pp_acts(@acts);
+my $o = Lingua::PT::Actants->new( conll => $input );
+
+print "Sentence: ", $o->sentence, "\n";
+
+my @cores = $o->acts_cores;
+print $o->pp_acts_cores(@cores);
+my @acts = $o->actants;
+print $o->pp_acts_syntagmas(@acts);
 

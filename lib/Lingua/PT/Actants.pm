@@ -5,15 +5,7 @@ use strict;
 use warnings;
 
 sub new {
-  my ($class) = @_;
-  my $self = bless({}, $class);
-
-  return $self;
-}
-
-sub actants {
-  my ($self, %args) = @_;
-
+  my ($class, %args) = @_;
   my $data;
 
   # input is in conll* format
@@ -21,7 +13,8 @@ sub actants {
     $data = _conll2data($args{conll});
   }
 
-  return _deps2acts($data);
+  my $self = bless({ data=>$data }, $class);
+  return $self;
 }
 
 sub _conll2data {
@@ -36,23 +29,41 @@ sub _conll2data {
   return [@data];
 }
 
-sub _deps2acts {
-  my ($data) = @_;
-  my $acts = {};
+sub sentence {
+  my ($self) = @_;
+
+  return join(' ', map {$_->{form}} @{$self->{data}});
+}
+
+sub actants {
+  my ($self, %args) = @_;
+
+  my @cores = $self->acts_cores($self->{data});
+  my @acts = $self->acts_syntagmas([@cores], $self->{data});
+
+  return @acts;
+}
+
+sub acts_cores {
+  my ($self, $data) = @_;
+
+  $data = $self->{data} unless $data;
 
   my @verbs;
   foreach (@{$data}) {
     push @verbs, $_ if (lc($_->{pos}) eq 'verb');
   }
 
-  my @acts;
+  my @cores;
   foreach my $v (@verbs) {
     my $paths = _paths($v, $data);
 
     my @result;
     foreach (@$paths) {
       my $score = _score($_);
-      push @result, {token=>$_->[0],score=>$score};
+      if ($score >= 0) {
+        push @result, { token=>$_->[0], score=>$score};
+      }
     }
 
     # normalize results
@@ -63,7 +74,25 @@ sub _deps2acts {
     # sort results
     @result = sort {$b->{score} <=> $a->{score}} @result;
 
-    push @acts, { verb=>$v, rank=>[@result] };
+    push @cores, { verb=>$v, rank=>[@result] };
+  }
+
+  return @cores;
+}
+
+sub acts_syntagmas {
+  my ($self, $cores, $data) = @_;
+
+  my @acts;
+  foreach my $v (@$cores) {
+    my @list;
+    foreach my $r (@{ $v->{rank} }) {
+      next unless $r->{score} >= 0.02;  # FIXME: threshold cut option
+
+      my @child = _child($r->{token}, $data);
+      push @list, { tokens=>[@child] };
+    }
+    push @acts, { verb=>$v->{verb}, acts=>[@list] };
   }
 
   return @acts;
@@ -135,15 +164,46 @@ sub _score_rule {
   return 0.1;
 }
 
-sub pp_acts {
-  my ($self, @acts) = @_;
+sub _child {
+  my ($node, $data) = @_;
+  my @child = ();
 
-  foreach my $v (@acts) {
-    print "Actants rank for verb: $v->{verb}->{form}\n";
+  foreach (@$data) {
+    push @child, $_ if ($node->{id} == $_->{dep} or $node->{id} == $_->{id});
+
+  }
+
+  return @child;
+}
+
+sub pp_acts_cores {
+  my ($self, @cores) = @_;
+  my $r = "# Actants syntagma cores\n";
+
+  foreach my $v (@cores) {
+    $r .= " Verb: $v->{verb}->{form}\n";
     foreach (@{$v->{rank}}) {
-      printf " %.6f | %s\n", $_->{score}, $_->{token}->{form};
+      $r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{token}->{form};
     }
   }
+
+  return $r;
+}
+
+sub pp_acts_syntagmas {
+  my ($self, @acts) = @_;
+  my $r = "# Actants syntagmas\n";
+
+  foreach my $v (@acts) {
+    $r .= " Verb: $v->{verb}->{form}\n";
+    my $i = 1;
+    foreach (@{$v->{acts}}) {
+      $r .= sprintf "  %s: %s\n", "A$i", join(' ', map {$_->{form}} @{$_->{tokens}});
+      $i++;
+    }
+  }
+
+  return $r;
 }
 
 1;
@@ -155,9 +215,10 @@ __END__
 =head1 SYNOPSIS
 
     # using as a library
-    use Lingua::PT::Actants;;
-    my $a = Lingua::PT::Actants->new;
-    my @actants = $a->actants($input);
+    use Lingua::PT::Actants;
+    my $a = Lingua::PT::Actants->new( conll => $input );
+    my @cores = $a->acts_cores;
+    my @actants = $a->actatans;
 
     # example from the command line
     $ cat examples/input.txt 
@@ -166,13 +227,18 @@ __END__
     3   tem     _   VERB    VERB    _   0   ROOT    _   _
     4   razão   _   NOUN    NOUN    _   3   dobj    _   _
     5   .       _   PUNCT   PUNCT   _   3   punct   _   _
-    $ cat examples/input.txt | perl -Ilib bin/actants 
-    Actants rank for verb: tem
-     0.526990 | Maria
-     0.461116 | razão
-     0.008234 | .
-     0.003660 | A
-
+    $ cat examples/input.txt | actants
+    Sentence: A Maria tem razão .
+    # Actants syntagma cores
+     Verb: tem
+      0.526990 | Maria
+      0.461116 | razão
+      0.008234 | .
+      0.003660 | A
+    # Actants syntagmas
+     Verb: tem
+      A1: A Maria
+      A2: razão
 
 =head1 DESCRIPTION
 
@@ -182,13 +248,22 @@ for the verb to which is related.
 
 =func new
 
-Create a new object.
+Create a new object, pass as argument the input text in CONLL format.
+
+=func acts_cores
+
+Compute the core (a token) of the actants syntagmas as rank sorted by score.
+
+=func pp_acts_cores
+
+Pretty print actants cores, mainly to be used by the command line interface.
+
 
 =func actants
 
 Compute actants for a sentence, returns a list of actants found.
 
-=func pp_acts
+=func pp_acts_syntagmas
 
-Pretty print actants list, mainly to be used by the command line interface.
+Pretty print actants syntagmas, mainly to be used by the command line interface.
 
