@@ -206,6 +206,30 @@ sub pp_acts_syntagmas {
   return $r;
 }
 
+sub drop_auxs {
+  my ($self) = @_;
+  my @list = @{ $self->{data} };
+
+  my @data;
+  my $a = shift @list;
+  foreach my $b (@list) {
+    if ( lc($a->{pos}) eq 'verb' and lc($b->{pos}) eq 'verb' ) {
+      $a = $b;
+    }
+    else {
+      push @data, $a;
+      $a = $b;
+    }
+  }
+  push @data, $a;
+
+  my @tokens = map { $_->{form} if exists($_->{form}) } @data;
+  @tokens = grep {defined $_} @tokens;
+  my $s = join(' ', @tokens);
+
+  return $s;
+}
+
 1;
 
 __END__

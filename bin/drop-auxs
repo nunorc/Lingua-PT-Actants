@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# PODNAME: actants
-# ABSTRACT: command line interface to Lingua::PT::Actants
+# PODNAME: drop-auxs
+# ABSTRACT: (experimental) drop auxiliary verbs in a sentence
 
 use warnings;
 use strict;
@@ -20,13 +20,10 @@ else {
 }
 
 unless ($input) {
-  print "Usage: actants <input>\n";
+  print "Usage: drop-auxs <input>\n";
   exit;
 }
 
 my $o = Lingua::PT::Actants->new( conll => $input );
-my @cores = $o->acts_cores;
-my @acts = $o->actants;
-
-print $o->pp_acts_syntagmas(@acts), "\n", $o->pp_acts_cores(@cores);
+print $o->drop_auxs;
 
