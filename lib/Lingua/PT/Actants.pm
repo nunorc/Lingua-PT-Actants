@@ -82,6 +82,7 @@ sub acts_cores {
 
 sub acts_syntagmas {
   my ($self, $cores, $data) = @_;
+  my $visited = {};
 
   my @acts;
   foreach my $v (@$cores) {
@@ -89,7 +90,10 @@ sub acts_syntagmas {
     foreach my $r (@{ $v->{rank} }) {
       next unless $r->{score} >= 0.02;  # FIXME: threshold cut option
 
-      my @child = _child($r->{token}, $data);
+      my @child = _child($r->{token}, $data, $visited);
+      $visited->{$_->{id}}++ foreach (@child);
+
+      next unless @child;
       push @list, { tokens=>[@child] };
     }
     push @acts, { verb=>$v->{verb}, acts=>[@list] };
@@ -151,6 +155,7 @@ sub _score_pos {
   my ($pos) = @_;
 
   return 0.8 if ($pos =~ m/^(noun|propn)$/i);
+  return -1 if ($pos =~ m/^(punct)$/i);
 
   return 0.1;
 }
@@ -165,12 +170,12 @@ sub _score_rule {
 }
 
 sub _child {
-  my ($node, $data) = @_;
+  my ($node, $data, $visited) = @_;
   my @child = ();
 
   foreach (@$data) {
+    next if exists($visited->{$_->{id}});
     push @child, $_ if ($node->{id} == $_->{dep} or $node->{id} == $_->{id});
-
   }
 
   return @child;
