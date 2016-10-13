@@ -1,0 +1,8 @@
+{{$NEXT}}
+
+    * Skip already visited nodes when computing actants syntagmas.
+
+0.01      2016-10-13 14:08:58+01:00 Europe/Lisbon
+
+    * Initial release.
+
