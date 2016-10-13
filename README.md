@@ -4,7 +4,7 @@ Lingua::PT::Actants - compute verb actants for Portuguese
 
 # VERSION
 
-version 0.01
+version 0.02
 
 # SYNOPSIS
 
