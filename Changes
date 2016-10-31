@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    * Correctly compute full actants syntagmas.
+
 0.02      2016-10-13 14:34:08+01:00 Europe/Lisbon
 
     * Skip already visited nodes when computing actants syntagmas.

@@ -82,7 +82,6 @@ sub acts_cores {
 
 sub acts_syntagmas {
   my ($self, $cores, $data) = @_;
-  my $visited = {};
 
   my @acts;
   foreach my $v (@$cores) {
@@ -90,8 +89,7 @@ sub acts_syntagmas {
     foreach my $r (@{ $v->{rank} }) {
       next unless $r->{score} >= 0.02;  # FIXME: threshold cut option
 
-      my @child = _child($r->{token}, $data, $visited);
-      $visited->{$_->{id}}++ foreach (@child);
+      my @child = _child($r->{token}, $data);
 
       next unless @child;
       push @list, { tokens=>[@child] };
@@ -170,15 +168,32 @@ sub _score_rule {
 }
 
 sub _child {
-  my ($node, $data, $visited) = @_;
+  my ($node, $data) = @_;
   my @child = ();
 
-  foreach (@$data) {
-    next if exists($visited->{$_->{id}});
-    push @child, $_ if ($node->{id} == $_->{dep} or $node->{id} == $_->{id});
+  my $id_tree = {};
+  $id_tree = _id_tree($id_tree, $node, $data);
+
+  foreach my $id (sort keys %$id_tree) {
+    foreach (@$data) {
+      push @child, $_ if ($_->{id} == $id);
+    }
   }
 
   return @child;
+}
+
+sub _id_tree {
+  my ($id_tree, $node, $data) = @_;
+
+  $id_tree->{$node->{id}}++;
+  foreach (@$data) {
+    if ($node->{id} == $_->{dep}) {
+      $id_tree = _id_tree($id_tree, $_, $data)
+    }
+  }
+
+  return $id_tree;
 }
 
 sub pp_acts_cores {
