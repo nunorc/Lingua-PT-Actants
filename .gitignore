@@ -1,2 +1,4 @@
 .build
 Lingua-IdSplitter-0.0*
+*.txt
+*.conll
