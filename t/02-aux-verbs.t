@@ -21,7 +21,7 @@ my $gold = {
       }
   };
 
-foreach my $i (2 .. 4) {
+foreach my $i (2 .. 3) {
   my $input = path("examples/input-$i.conll")->slurp;
   my $o = Lingua::PT::Actants->new( conll=>$input );
   my @cores = $o->acts_cores;
