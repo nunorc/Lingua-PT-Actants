@@ -14,7 +14,7 @@ sub new {
   }
 
   # pre process data
-  $data = _pre_proc_tree($data);
+  $data = _pre_proc_tree($data) if $data;
 
   my $self = bless({ data=>$data }, $class);
   return $self;

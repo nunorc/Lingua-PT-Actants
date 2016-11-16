@@ -9,13 +9,13 @@ use Path::Tiny;
 use Data::Dumper;
 
 my $o = Lingua::PT::Actants->new;
-ok( ref($o) eq 'Lingua::PT::Actants', 'create object' );
+ok( ref($o) eq 'Lingua::PT::Actants', 'actants object' );
 
-my $input = path('examples/input.txt')->slurp_utf8;
+my $input = path('examples/input-1.conll')->slurp_utf8;
 $o = Lingua::PT::Actants->new( conll=>$input );
-my @acts = $o->acts_cores;
+my @cores = $o->acts_cores;
+ok( scalar(@cores) == 1, 'one verb' );
 
-ok( scalar(@acts) == 1, 'only one actant' );
-ok( $acts[0]->{verb}->{form} eq 'tem', 'verb is _tem_' );
-ok( $acts[0]->{rank}->[0]->{token}->{form} eq 'Maria', 'top entry in rank is _Maria_' );
+ok( $cores[0]->{verb}->{form} eq 'tem', 'verb is _tem_' );
+ok( $cores[0]->{rank}->[0]->{token}->{form} eq 'Maria', 'top entry in rank is _Maria_' );
 
