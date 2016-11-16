@@ -13,6 +13,9 @@ sub new {
     $data = _conll2data($args{conll});
   }
 
+  # pre process data
+  $data = _pre_proc_tree($data);
+
   my $self = bless({ data=>$data }, $class);
   return $self;
 }
@@ -45,9 +48,8 @@ sub actants {
 }
 
 sub acts_cores {
-  my ($self, $data) = @_;
-
-  $data = $self->{data} unless $data;
+  my ($self) = @_;
+  my $data = $self->{data};
 
   my @verbs;
   foreach (@{$data}) {
@@ -224,6 +226,45 @@ sub pp_acts_syntagmas {
   }
 
   return $r;
+}
+
+sub _pre_proc_tree {
+  my ($data) = @_;
+
+  my $i;
+  for ($i = 0; $i < @$data-1; $i++) {
+    my ($a, $b) = ($data->[$i], $data->[$i+1]);
+
+    if ($a->{pos} eq 'VERB' and $b->{pos} eq 'VERB' and $b->{rule} eq 'xcomp') {
+      $data = _update_tree($data, $a, $b);
+    }
+  }
+
+  return $data;
+}
+
+sub _update_tree {
+  my ($data, $v1, $v2) = @_;
+
+  # handle auxiliar verbs
+  my @final = ();
+  my $i = 0;
+  for (@$data) {
+    $_->{dep} = $v1->{id} if ($_->{dep} == $v2->{id});
+
+            #'id' => '3', 'form' => 'pode', 'rule' => 'ROOT', 'pos' => 'VERB',
+            #'dep' => '0'
+    if ($_->{id} == $v1->{id}) {
+      push @final, {id=>$_->{id}, form=>join('-',$v1->{form}, $v2->{form}), rule=>'ROOT', pos=>'VERB', dep=> '0'};
+    }
+
+    $_->{id} = $_->{id}-1 if ($_->{id} > $v1->{id});
+    $_->{dep} = $_->{dep}-1 if ($_->{dep} > $v1->{id});
+
+    push @final, $_ unless ($_->{id} == $v1->{id} or $_->{id} == $v2->{id});
+  }
+
+  return [@final];
 }
 
 sub drop_auxs {
