@@ -1,7 +1,7 @@
 {{$NEXT}}
 
     * Correctly compute full actants syntagmas.
-    * Pre-process tree because of auxiliary verbs..
+    * Pre-process tree because of auxiliary verbs.
 
 0.02      2016-10-13 14:34:08+01:00 Europe/Lisbon
 
