@@ -89,7 +89,7 @@ sub acts_cores {
     my @final;
     my $ac = 0;
     foreach (@rank) {
-      next if ($ac > 0.7 or $_->{score} < 0.1);
+      next if ($ac > 0.9 or $_->{score} < 0.1);
 
       push @final, $_;
       $ac += $_->{score};
@@ -138,7 +138,15 @@ sub acts_syntagmas {
 
     my @list;
     foreach my $t (@tokens) {
-      my @child = _child($t, $data);
+      my @child = $self->_child($t);
+
+      # remove tokens that are cores from child list
+      my @tmp;
+      foreach (@child) {
+        push @tmp, $_ unless $self->_is_core($_);
+        push @tmp, $_ if $_->{id} == $t->{id};
+      }
+      @child = @tmp;
 
       next unless @child;
       push @list, { tokens=>[@child] };
@@ -173,7 +181,7 @@ sub _score_pos {
   return 0.8 if ($pos =~ m/^(noun|propn|prop)$/i);
   return 0 if ($pos =~ m/^(punct)$/i);
 
-  return 0.1;
+  return 0;
 }
 
 sub _score_rule {
@@ -182,7 +190,7 @@ sub _score_rule {
   return 0.8 if ($rule =~ m/^(nsubj|nsubjpass)$/i);
   return 0.6 if ($rule =~ m/^(dobj)$/i);
 
-  return 0.1;
+  return 0;
 }
 
 sub _dist {
@@ -196,15 +204,16 @@ sub _dist {
 }
 
 sub _child {
-  my ($node, $data) = @_;
+  my ($self, $node) = @_;
   my @child = ();
+  my $data = $self->{data};
 
   my $id_tree = {};
   $id_tree = _id_tree($id_tree, $node, $data);
 
   foreach my $id (sort keys %$id_tree) {
     foreach (@$data) {
-      push @child, $_ if ($_->{id} == $id);
+      push @child, $_ if $_->{id} == $id;
     }
   }
 
@@ -222,6 +231,18 @@ sub _id_tree {
   }
 
   return $id_tree;
+}
+
+sub _is_core {
+  my ($self, $token) = @_;
+
+  foreach my $i (@{$self->{cores}}) {
+    foreach (@{$i->{cores}}) {
+      return 1 if ($token->{id} == $_->{id});
+    }
+  }
+
+  return 0;
 }
 
 sub pp_acts_cores {
