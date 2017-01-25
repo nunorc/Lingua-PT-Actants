@@ -13,9 +13,6 @@ sub new {
     $data = _conll2data($args{conll});
   }
 
-  # pre process data
-  $data = _pre_proc_tree($data) if $data;
-
   my $self = bless({ data=>$data }, $class);
   return $self;
 }
@@ -25,14 +22,18 @@ sub _conll2data {
 
   my @data;
   foreach my $line (split /\n/, $input) {
+    next if $line =~ m/^\s*$/;
+
     my @l = split /\s+/, $line;
-    push @data, {id=>$l[0],form=>$l[1],pos=>$l[3],dep=>$l[6],rule=>$l[7]};
+    push @data, {
+        id=>$l[0], form=>$l[1], pos=>$l[3], dep=>$l[6], rule=>$l[7]
+      };
   }
 
   return [@data];
 }
 
-sub sentence {
+sub text {
   my ($self) = @_;
 
   return join(' ', map {$_->{form}} @{$self->{data}});
@@ -41,30 +42,31 @@ sub sentence {
 sub actants {
   my ($self, %args) = @_;
 
-  my @cores = $self->acts_cores($self->{data});
-  my @acts = $self->acts_syntagmas([@cores], $self->{data});
+  my ($cores, $ranks) = $self->acts_cores($self->{data});
+  $self->{cores} = $cores;
+  $self->{ranks} = $ranks;
 
-  return @acts;
+  my @acts = $self->acts_syntagmas($cores, $self->{data});
+  $self->{acts} = [@acts];
+
+  return $self->{acts};
 }
 
+# compute actant cores
 sub acts_cores {
   my ($self) = @_;
   my $data = $self->{data};
 
-  my @verbs;
-  foreach (@{$data}) {
-    push @verbs, $_ if (lc($_->{pos}) eq 'verb');
-  }
+  # compute main verbs in the sentence
+  my @verbs = _main_verbs($data);
 
-  my @cores;
+  my @ranks;
   foreach my $v (@verbs) {
-    my $paths = _paths($v, $data);
-
     my @result;
-    foreach (@$paths) {
-      my $score = _score($_);
+    foreach (@$data) {
+      my $score = _score($_, $v);
       if ($score >= 0) {
-        push @result, { token=>$_->[0], score=>$score};
+        push @result, { token => $_, score => $score };
       }
     }
 
@@ -73,80 +75,94 @@ sub acts_cores {
     $total += $_->{score} foreach @result;
     $_->{score} = $_->{score}/$total foreach @result;
 
-    # sort results
+    # sort results by score
     @result = sort {$b->{score} <=> $a->{score}} @result;
 
-    push @cores, { verb=>$v, rank=>[@result] };
+    push @ranks, { verb => $v, rank => [@result] };
   }
 
-  return @cores;
+  my @cores;
+  foreach (@ranks) {
+    my ($verb, @rank) = ( $_->{verb}, @{ $_->{rank} } );
+
+    # trim cores in rank
+    my @final;
+    my $ac = 0;
+    foreach (@rank) {
+      next if ($ac > 0.7 or $_->{score} < 0.1);
+
+      push @final, $_;
+      $ac += $_->{score};
+    }
+
+    # sort cores by token position in sentence
+    @final = sort { $a->{token}->{id} <=> $b->{token}->{id} } @final;
+
+    # set to simple list of tokens
+    @final = map {$_->{token}} @final;
+
+    push @cores, { verb => $verb, cores => [@final] };
+  }
+
+  return ([@cores], [@ranks]);
+}
+
+sub _main_verbs {
+  my ($data) = @_;
+  my @verbs;
+
+  my $i;
+  my @tmp;
+  for ($i = 0; $i < @$data-1; $i++) {
+    my ($a, $b) = ($data->[$i], $data->[$i+1]);
+
+    unless ($a->{pos} eq 'VERB' and $b->{pos} eq 'VERB') {
+      push @tmp, $a;
+    }
+    push @tmp, $b if ($i >= @$data);
+  }
+
+  foreach (@tmp) {
+    push @verbs, $_ if (lc($_->{pos}) eq 'verb');
+  }
+
+  return @verbs;
 }
 
 sub acts_syntagmas {
   my ($self, $cores, $data) = @_;
 
   my @acts;
-  foreach my $v (@$cores) {
-    my @list;
-    foreach my $r (@{ $v->{rank} }) {
-      next unless $r->{score} >= 0.02;  # FIXME: threshold cut option
+  foreach (@$cores) {
+    my ($verb, @tokens) = ($_->{verb}, @{ $_->{cores} });
 
-      my @child = _child($r->{token}, $data);
+    my @list;
+    foreach my $t (@tokens) {
+      my @child = _child($t, $data);
 
       next unless @child;
       push @list, { tokens=>[@child] };
     }
-    push @acts, { verb=>$v->{verb}, acts=>[@list] };
+    push @acts, { verb=>$verb, acts=>[@list] };
   }
 
   return @acts;
 }
 
-sub _paths {
-  my ($pivot, $data) = @_;
-  my @paths;
-
-  foreach (@{$data}) {
-    my $p = _fullpath($_, $pivot, $data, []);
-    push @paths, $p if ($p and @$p>1);
-  }
-
-  return [@paths];
-}
-
-sub _fullpath {
-  my ($from, $to, $data, $path) = @_;
-  push @$path, $from;
-
-  if ($from->{id} == $to->{id}) {
-    return $path;
-  }
-  else {
-    foreach (@{$data}) {
-      if ($from->{dep} == $_->{id}) {
-        _fullpath($_, $to, $data, $path);
-      }
-    }
-    return ($path->[-1]->{id} == $to->{id} ? $path : []);
-  }
-
-  return [];
-}
-
 sub _score {
-  my ($path) = @_;
+  my ($token, $verb) = @_;
   my $score = 0;
 
-  #foreach (@$path) { $score += _el_score($_); }
-  $score = _el_score($path->[0]);
+  $score = _score_token($token, $verb);
+  my $dist = _dist($token, $verb);
 
-  return $score / (scalar(@$path)*scalar(@$path));
+  return ($dist ? $score/sqrt($dist) : 0);
 }
 
-sub _el_score {
-  my ($el) = @_;
+sub _score_token {
+  my ($token) = @_;
 
-  my $score = _score_pos($el->{pos}) * _score_rule($el->{rule});
+  my $score = (_score_pos($token->{pos}) + _score_rule($token->{rule})) / 2;
 
   return $score;
 }
@@ -154,8 +170,8 @@ sub _el_score {
 sub _score_pos {
   my ($pos) = @_;
 
-  return 0.8 if ($pos =~ m/^(noun|propn)$/i);
-  return -1 if ($pos =~ m/^(punct)$/i);
+  return 0.8 if ($pos =~ m/^(noun|propn|prop)$/i);
+  return 0 if ($pos =~ m/^(punct)$/i);
 
   return 0.1;
 }
@@ -163,10 +179,20 @@ sub _score_pos {
 sub _score_rule {
   my ($rule) = @_;
 
-  return 0.8 if ($rule =~ m/^(nsubj)$/i);
-  return 0.7 if ($rule =~ m/^(dobj)$/i);
+  return 0.8 if ($rule =~ m/^(nsubj|nsubjpass)$/i);
+  return 0.6 if ($rule =~ m/^(dobj)$/i);
 
   return 0.1;
+}
+
+sub _dist {
+  my ($token, $verb) = @_;
+
+  my $dist = 0;
+  $dist = $token->{id} - $verb->{id};
+  $dist *= -1 if $dist < 0;
+
+  return $dist;
 }
 
 sub _child {
@@ -199,13 +225,17 @@ sub _id_tree {
 }
 
 sub pp_acts_cores {
-  my ($self, @cores) = @_;
-  my $r = "# Actants syntagma cores\n";
+  my ($self, $cores) = @_;
+  $cores = $self->{cores} unless $cores;
 
-  foreach my $v (@cores) {
-    $r .= " Verb: $v->{verb}->{form}\n";
-    foreach (@{$v->{rank}}) {
-      $r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{token}->{form};
+  my $r = "# Actants syntagma cores\n";
+  foreach (@$cores) {
+    my ($verb, @tokens) = ($_->{verb}, @{$_->{cores}} );
+
+    $r .= " Verb: $verb->{form}\n";
+    foreach (@tokens) {
+      #$r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{form};
+      $r .= sprintf "  + %s\n", $_->{form};
     }
   }
 
@@ -213,14 +243,19 @@ sub pp_acts_cores {
 }
 
 sub pp_acts_syntagmas {
-  my ($self, @acts) = @_;
-  my $r = "# Actants syntagmas\n";
+  my ($self, $acts) = @_;
+  $acts = $self->{acts} unless $acts;
 
-  foreach my $v (@acts) {
-    $r .= " Verb: $v->{verb}->{form}\n";
+  my $r = "# Actants syntagmas\n";
+  foreach (@$acts) {
+    my ($verb, @list) = ($_->{verb}, @{ $_->{acts} });
+
+    $r .= " Verb: $verb->{form}\n";
     my $i = 1;
-    foreach (@{$v->{acts}}) {
-      $r .= sprintf "  %s: %s\n", "A$i", join(' ', map {$_->{form}} @{$_->{tokens}});
+    foreach (@list) {
+      $r .= sprintf "  %s: %s\n",
+              "A$i",
+                join(' ', map {$_->{form}} @{ $_->{tokens}});
       $i++;
     }
   }
@@ -228,44 +263,23 @@ sub pp_acts_syntagmas {
   return $r;
 }
 
-sub _pre_proc_tree {
-  my ($data) = @_;
+sub pp_acts_ranks {
+  my ($self, $ranks) = @_;
+  $ranks = $self->{ranks} unless $ranks;
 
-  my $i;
-  for ($i = 0; $i < @$data-1; $i++) {
-    my ($a, $b) = ($data->[$i], $data->[$i+1]);
+  my $r = "# Actants cores ranks\n";
+  foreach (@$ranks) {
+    my ($verb, @rank) = ($_->{verb}, @{$_->{rank}} );
 
-    if ($a->{pos} eq 'VERB' and $b->{pos} eq 'VERB' and $b->{rule} eq 'xcomp') {
-      $data = _update_tree($data, $a, $b);
+    $r .= " Verb: $verb->{form}\n";
+    foreach (@rank) {
+      $r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{token}->{form};
     }
   }
 
-  return $data;
+  return $r;
 }
 
-sub _update_tree {
-  my ($data, $v1, $v2) = @_;
-
-  # handle auxiliar verbs
-  my @final = ();
-  my $i = 0;
-  for (@$data) {
-    $_->{dep} = $v1->{id} if ($_->{dep} == $v2->{id});
-
-            #'id' => '3', 'form' => 'pode', 'rule' => 'ROOT', 'pos' => 'VERB',
-            #'dep' => '0'
-    if ($_->{id} == $v1->{id}) {
-      push @final, {id=>$_->{id}, form=>join('-',$v1->{form}, $v2->{form}), rule=>'ROOT', pos=>'VERB', dep=> '0'};
-    }
-
-    $_->{id} = $_->{id}-1 if ($_->{id} > $v1->{id});
-    $_->{dep} = $_->{dep}-1 if ($_->{dep} > $v1->{id});
-
-    push @final, $_ unless ($_->{id} == $v1->{id} or $_->{id} == $v2->{id});
-  }
-
-  return [@final];
-}
 
 1;
 
@@ -311,6 +325,10 @@ for the verb to which is related.
 
 Create a new object, pass as argument the input text in CONLL format.
 
+=func text
+
+Returns the original text.
+
 =func acts_cores
 
 Compute the core (a token) of the actants syntagmas as rank sorted by score.
@@ -319,7 +337,6 @@ Compute the core (a token) of the actants syntagmas as rank sorted by score.
 
 Pretty print actants cores, mainly to be used by the command line interface.
 
-
 =func actants
 
 Compute actants for a sentence, returns a list of actants found.
@@ -327,4 +344,8 @@ Compute actants for a sentence, returns a list of actants found.
 =func pp_acts_syntagmas
 
 Pretty print actants syntagmas, mainly to be used by the command line interface.
+
+=head1 ACKNOWLEDGEMENTS
+
+This work is partially supported by the "Programa Operacional da Região Norte", NORTE2020, in the context of project NORTE-01-0145-FEDER-000037.
 

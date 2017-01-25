@@ -4,16 +4,16 @@
 
 use warnings;
 use strict;
+binmode(STDOUT, ":utf8");
 
 use Lingua::PT::Actants;
 use Path::Tiny;
-use utf8::all;
 
 my $input;
 
 my $file = shift;
 if ($file) {
-  $input = path($file)->slurp_raw;
+  $input = path($file)->slurp_utf8;
 }
 else {
   $input = join('', <STDIN>);
@@ -24,9 +24,12 @@ unless ($input) {
   exit;
 }
 
-my $o = Lingua::PT::Actants->new( conll => $input );
-my @cores = $o->acts_cores;
-my @acts = $o->actants;
+my $o = Lingua::PT::Actants2->new( conll => $input );
+my ($cores, $ranks) = $o->acts_cores;
+my $acts = $o->actants;
 
-print $o->pp_acts_syntagmas(@acts), "\n", $o->pp_acts_cores(@cores);
+print $o->text, "\n\n",
+        $o->pp_acts_syntagmas($acts), "\n",
+          $o->pp_acts_cores($cores), "\n",
+            $o->pp_acts_ranks($ranks);
 
