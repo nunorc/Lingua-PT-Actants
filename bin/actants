@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # PODNAME: actants
-# ABSTRACT: command line interface to Lingua::PT::Actants
+# ABSTRACT: command line interface for Lingua::PT::Actants
 
 use warnings;
 use strict;

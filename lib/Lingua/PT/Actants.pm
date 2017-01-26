@@ -313,8 +313,7 @@ __END__
     # using as a library
     use Lingua::PT::Actants;
     my $a = Lingua::PT::Actants->new( conll => $input );
-    my @cores = $a->acts_cores;
-    my @actants = $a->actatans;
+    my $actants = $a->actants;  # a list cores per main verb found
 
     # example from the command line
     $ cat examples/input.txt 
@@ -323,18 +322,27 @@ __END__
     3   tem     _   VERB    VERB    _   0   ROOT    _   _
     4   razão   _   NOUN    NOUN    _   3   dobj    _   _
     5   .       _   PUNCT   PUNCT   _   3   punct   _   _
-    $ cat examples/input.txt | actants
-    Sentence: A Maria tem razão .
-    # Actants syntagma cores
-     Verb: tem
-      0.526990 | Maria
-      0.461116 | razão
-      0.008234 | .
-      0.003660 | A
+
+    $ actants input.txt
+    A Maria tem razão .
+    
     # Actants syntagmas
      Verb: tem
       A1: A Maria
       A2: razão
+    
+    # Actants syntagma cores
+     Verb: tem
+      + Maria
+      + razão
+    
+    # Actants cores ranks
+     Verb: tem
+      0.533333 | Maria
+      0.466667 | razão
+      0.000000 | A
+      0.000000 | tem
+      0.000000 | .
 
 =head1 DESCRIPTION
 
@@ -342,27 +350,27 @@ This module implements an algorithm that computes a sorted rank of tokens
 where the score measures the propensity of the token being an actant
 for the verb to which is related.
 
-=func new
+=method new
 
 Create a new object, pass as argument the input text in CONLL format.
 
-=func text
+=method text
 
 Returns the original text.
 
-=func acts_cores
+=method acts_cores
 
 Compute the core (a token) of the actants syntagmas as rank sorted by score.
 
-=func pp_acts_cores
+=method pp_acts_cores
 
 Pretty print actants cores, mainly to be used by the command line interface.
 
-=func actants
+=method actants
 
 Compute actants for a sentence, returns a list of actants found.
 
-=func pp_acts_syntagmas
+=method pp_acts_syntagmas
 
 Pretty print actants syntagmas, mainly to be used by the command line interface.
 
