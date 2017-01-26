@@ -1,7 +1,10 @@
 {{$NEXT}}
 
+0.03      2017-01-26 13:31:56+00:00 Europe/Lisbon
+
+    * Completely refactor the core algorithm.
     * Correctly compute full actants syntagmas.
-    * Pre-process tree because of auxiliary verbs.
+    * Update test files.
 
 0.02      2016-10-13 14:34:08+01:00 Europe/Lisbon
 
