@@ -4,24 +4,42 @@ package Lingua::PT::Actants;
 use strict;
 use warnings;
 
+use Storable qw/dclone/;
+
 sub new {
   my ($class, %args) = @_;
-  my $data;
+  my $self = bless({ }, $class);
 
-  # input is in conll* format
   if (exists($args{conll})) {
-    $data = _conll2data($args{conll});
+    $self->{conll} = $args{conll};
+  }
+  else {
+    # FIXME PLN::PT
   }
 
-  my $self = bless({ data=>$data }, $class);
+  # initial data -- conll format
+  $self->{data} = $self->_conll2data($self->{conll});
+
+  # build a tree from the list of deps
+  $self->{tree} = $self->_data2tree($self->{data});
+
+  # split tree into one tree per verb+conj
+  my $tree = dclone($self->{tree});
+  $self->{deps}   = [ reverse $self->_tree2deps($tree) ];
+
+  # simplify each dep tree verbs
+  my @deps = @{dclone($self->{deps})};
+  $self->{simple} = [ map {$self->_tree2simple($_)} @deps ];
+
   return $self;
 }
 
+# conll -> data
 sub _conll2data {
-  my ($input) = @_;
+  my ($self, $conll) = @_;
 
   my @data;
-  foreach my $line (split /\n/, $input) {
+  foreach my $line (split /\n/, $conll) {
     next if $line =~ m/^\s*$/;
 
     my @l = split /\s+/, $line;
@@ -33,6 +51,139 @@ sub _conll2data {
   return [@data];
 }
 
+# data -> tree
+sub _data2tree {
+  my ($self, $data) = @_;
+
+  my $root;
+  foreach (@$data) {
+    $root = $_ if $_->{rule} eq 'ROOT';
+  }
+
+  $root = $self->_node($root, $data);
+
+  return $root;
+}
+
+sub _node {
+  my ($self, $node, $data) = @_;
+
+  my @child = ();
+  foreach (@$data) {
+    push @child, $self->_node($_, $data) if ($_->{dep} == $node->{id});
+  }
+  $node->{child} = [@child];
+
+  return $node;
+}
+
+# tree -> deps
+sub _tree2deps {
+  my ($self, $node, @deps) = @_;
+
+  if ($node->{pos} eq 'VERB') {
+    my @child = ();
+    foreach my $c (@{ $node->{child} }) {
+      if ($c->{pos} eq 'VERB' and $c->{rule} eq 'conj') {
+        push @deps, $self->_tree2deps($c, @deps);
+      }
+      else {
+        push @child, $c;
+      }
+    }
+    $node->{child} = [@child];
+  }
+  push @deps, $node;
+
+  return @deps;
+}
+
+# tree -> simple tree
+# FIXME make recursive
+sub _tree2simple {
+  my ($self, $node) = @_;
+
+  if ($node->{pos} eq 'VERB') {
+    my $found = undef;
+    foreach my $c (@{ $node->{child} }) {
+      $found = $c if ($c->{pos} eq 'VERB');
+    }
+    if ($found) {
+      my @child;
+      foreach (@{ $node->{child} }, @{$found->{child}}) {
+        push @child, $_ unless $_->{id} == $found->{id};
+      }
+      $found->{child} = [@child];
+      $node = $found;
+    }
+  }
+
+  return $node;
+}
+
+sub tree2dot {
+  my ($self, $tree) = @_;
+
+  my $data = $self->{$tree};
+  my @graphs = ();
+  if (ref($data) eq 'ARRAY') { push @graphs, @$data; }
+  else { push @graphs, $data; }
+
+  my $dot = "digraph G {\ncharset= \"UTF-8\";\n";
+  foreach (@graphs) {
+    my $rand = int(rand(1000));
+    $dot .= " subgraph G_$rand {\n";
+    $dot .= join("\n", $self->_deps2nodes($rand, $_));
+    $dot .= join("\n", $self->_deps2edges($rand, $_));
+    $dot .= "\n }\n";
+  }
+  $dot .= "\n}\n";
+}
+
+sub _deps2nodes {
+  my ($self, $prefix, $node) = @_;
+  my @lines;
+
+  push @lines, " node [label=\"$node->{form}\"] N_${prefix}_$node->{id};";
+  foreach (@{$node->{child}}) {
+    push @lines, $self->_deps2nodes($prefix, $_);
+  }
+
+  return @lines;
+}
+
+sub _deps2edges {
+  my ($self, $prefix, $node) = @_;
+  my @lines;
+
+  foreach (@{$node->{child}}) {
+    push @lines,  " N_${prefix}_$node->{id} -> N_${prefix}_$_->{id} [label=\"$_->{rule}\"];";
+    push @lines, $self->_deps2edges($prefix, $_);
+  }
+
+  return @lines;
+}
+
+sub cores2dot {
+  my ($self, @cores) = @_;
+
+  my $dot = "digraph G {\ncharset= \"UTF-8\";\n";
+  foreach my $core (@cores) {
+    my $rand = int(rand(1000));
+    $dot .= " subgraph G_$rand {\n";
+    foreach ($core->{verb}, @{$core->{cores}}) {
+      $dot .= " node [label=\"$_->{form}\"] N_$_->{id};";
+    }
+    foreach (@{$core->{cores}}) {
+      $dot .= "  N_$core->{verb}->{id} -> N_$_->{id};\n";
+    }
+    $dot .= "\n }\n";
+  }
+  $dot .= "\n}\n";
+
+  return $dot;
+}
+
 sub text {
   my ($self) = @_;
 
@@ -42,221 +193,136 @@ sub text {
 sub actants {
   my ($self, %args) = @_;
 
-  my ($cores, $ranks) = $self->acts_cores($self->{data});
-  $self->{cores} = $cores;
-  $self->{ranks} = $ranks;
+  my @cores = $self->acts_cores;
+  my @syns = $self->acts_syns(@cores);
 
-  my @acts = $self->acts_syntagmas($cores, $self->{data});
-  $self->{acts} = [@acts];
-
-  return $self->{acts};
+  return ([@cores], [@syns]);
 }
 
 # compute actant cores
 sub acts_cores {
   my ($self) = @_;
-  my $data = $self->{data};
+  my $data = $self->{simple};
+  my @final;
 
-  # compute main verbs in the sentence
-  my @verbs = _main_verbs($data);
+  foreach my $tree (@$data) {
+    my $verb = dclone($tree);
+    delete $verb->{child};
 
-  my @ranks;
-  foreach my $v (@verbs) {
-    my @result;
-    foreach (@$data) {
-      my $score = _score($_, $v);
-      if ($score >= 0) {
-        push @result, { token => $_, score => $score };
+    my @cores = ();
+    my @children = @{$tree->{child}};
+
+    foreach my $i (@children) {
+      if ($self->_score($i) > 0) {
+        push @cores, $i;
       }
+      push @children, @{$i->{child}} if $i->{child};
     }
-
-    # normalize results
-    my $total = 0;
-    $total += $_->{score} foreach @result;
-    $_->{score} = $_->{score}/$total foreach @result;
-
-    # sort results by score
-    @result = sort {$b->{score} <=> $a->{score}} @result;
-
-    push @ranks, { verb => $v, rank => [@result] };
+    push @final, { verb=>$verb, cores=>[@cores] };
   }
 
-  my @cores;
-  foreach (@ranks) {
-    my ($verb, @rank) = ( $_->{verb}, @{ $_->{rank} } );
+  $self->{cores} = [@final];
 
-    # trim cores in rank
-    my @final;
-    my $ac = 0;
-    foreach (@rank) {
-      next if ($ac > 0.9 or $_->{score} < 0.1);
-
-      push @final, $_;
-      $ac += $_->{score};
-    }
-
-    # sort cores by token position in sentence
-    @final = sort { $a->{token}->{id} <=> $b->{token}->{id} } @final;
-
-    # set to simple list of tokens
-    @final = map {$_->{token}} @final;
-
-    push @cores, { verb => $verb, cores => [@final] };
-  }
-
-  return ([@cores], [@ranks]);
+  return @final;
 }
 
-sub _main_verbs {
-  my ($data) = @_;
-  my @verbs;
+sub cores_simple {
+  my ($self, @cores) = @_;
+  @cores = @{$self->{cores}} unless @cores;
 
-  my $i;
-  my @tmp;
-  for ($i = 0; $i < @$data-1; $i++) {
-    my ($a, $b) = ($data->[$i], $data->[$i+1]);
-
-    unless ($a->{pos} eq 'VERB' and $b->{pos} eq 'VERB') {
-      push @tmp, $a;
-    }
-    push @tmp, $b if ($i >= @$data);
+  my @simple;
+  foreach (@cores) {
+    my $verb = $_->{verb}->{form};
+    my @cs = @{$_->{cores}};
+    @cs = map {$_->{form}} @cs;
+    push @simple, { $verb => [@cs] };
   }
 
-  foreach (@tmp) {
-    push @verbs, $_ if (lc($_->{pos}) eq 'verb');
-  }
-
-  return @verbs;
+  return @simple;
 }
 
-sub acts_syntagmas {
-  my ($self, $cores, $data) = @_;
+sub acts_syns {
+  my ($self, @cores) = @_;
+  @cores = @{$self->{cores}} unless @cores;
 
-  my @acts;
-  foreach (@$cores) {
-    my ($verb, @tokens) = ($_->{verb}, @{ $_->{cores} });
+  my @syns;
+  foreach (@cores) {
+    my $verb = $_->{verb};
+    my @cs = @{ $_->{cores} };
+    my @curr;
 
-    my @list;
-    foreach my $t (@tokens) {
-      my @child = $self->_child($t);
-
-      # remove tokens that are cores from child list
-      my @tmp;
+    foreach my $c (@cs) {
+      my @tokens = ($c);
+      my @child = exists($c->{child}) ? @{$c->{child}} : ();
       foreach (@child) {
-        push @tmp, $_ unless $self->_is_core($_);
-        push @tmp, $_ if $_->{id} == $t->{id};
+        unless (_is_core($_, @cs)) {
+          push @tokens, $_;
+          push @child, @{$_->{child}};
+        }
       }
-      @child = @tmp;
-
-      next unless @child;
-      push @list, { tokens=>[@child] };
+      @tokens = sort {$a->{id} <=> $b->{id}} @tokens;
+      delete($_->{child}) foreach (@tokens);
+      push @curr, [@tokens];
     }
-    push @acts, { verb=>$verb, acts=>[@list] };
+
+    push @syns, { verb=>$verb, syns=>[@curr] };
   }
 
-  return @acts;
+  return @syns;
+}
+
+sub _is_core {
+  my ($c, @cs) = @_;
+
+  foreach (@cs) {
+    return 1 if $_->{id} == $c->{id};
+  }
+
+  return 0;
 }
 
 sub _score {
-  my ($token, $verb) = @_;
+  my ($self, $token) = @_;
   my $score = 0;
 
-  $score = _score_token($token, $verb);
-  my $dist = _dist($token, $verb);
+  # token POS component
+  $score +=  8  if ($token->{pos} =~ m/^(noun|propn|prop)$/i);
+  $score += -10 if ($token->{pos} =~ m/^(punct)$/i);
 
-  return ($dist ? $score/sqrt($dist) : 0);
-}
-
-sub _score_token {
-  my ($token) = @_;
-
-  my $score = (_score_pos($token->{pos}) + _score_rule($token->{rule})) / 2;
+  # token rule component
+  $score += 4 if ($token->{rule} =~ m/^(nsubj|nsubjpass)$/i);
+  $score += 2 if ($token->{rule} =~ m/^(nmod)$/i);
 
   return $score;
 }
 
-sub _score_pos {
-  my ($pos) = @_;
+sub syns_simple {
+  my ($self, @syns) = @_;
 
-  return 0.8 if ($pos =~ m/^(noun|propn|prop)$/i);
-  return 0 if ($pos =~ m/^(punct)$/i);
-
-  return 0;
-}
-
-sub _score_rule {
-  my ($rule) = @_;
-
-  return 0.8 if ($rule =~ m/^(nsubj|nsubjpass)$/i);
-  return 0.6 if ($rule =~ m/^(dobj)$/i);
-
-  return 0;
-}
-
-sub _dist {
-  my ($token, $verb) = @_;
-
-  my $dist = 0;
-  $dist = $token->{id} - $verb->{id};
-  $dist *= -1 if $dist < 0;
-
-  return $dist;
-}
-
-sub _child {
-  my ($self, $node) = @_;
-  my @child = ();
-  my $data = $self->{data};
-
-  my $id_tree = {};
-  $id_tree = _id_tree($id_tree, $node, $data);
-
-  foreach my $id (sort keys %$id_tree) {
-    foreach (@$data) {
-      push @child, $_ if $_->{id} == $id;
-    }
+  my @simple;
+  foreach (@syns) {
+    my $verb = $_->{verb}->{form};
+    my @curr;
+    foreach my $s (@{$_->{syns}}) {
+      push @curr, join(' ', map {$_->{form}} @$s);
+    };
+    
+    push @simple, { $verb => [@curr] };
   }
 
-  return @child;
-}
-
-sub _id_tree {
-  my ($id_tree, $node, $data) = @_;
-
-  $id_tree->{$node->{id}}++;
-  foreach (@$data) {
-    if ($node->{id} == $_->{dep}) {
-      $id_tree = _id_tree($id_tree, $_, $data)
-    }
-  }
-
-  return $id_tree;
-}
-
-sub _is_core {
-  my ($self, $token) = @_;
-
-  foreach my $i (@{$self->{cores}}) {
-    foreach (@{$i->{cores}}) {
-      return 1 if ($token->{id} == $_->{id});
-    }
-  }
-
-  return 0;
+  return @simple;
 }
 
 sub pp_acts_cores {
-  my ($self, $cores) = @_;
-  $cores = $self->{cores} unless $cores;
+  my ($self, @cores) = @_;
 
   my $r = "# Actants syntagma cores\n";
-  foreach (@$cores) {
+  foreach (@cores) {
     my ($verb, @tokens) = ($_->{verb}, @{$_->{cores}} );
 
     $r .= " Verb: $verb->{form}\n";
     foreach (@tokens) {
-      #$r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{form};
-      $r .= sprintf "  + %s\n", $_->{form};
+      $r .= sprintf "  = %s\n", $_->{form};
     }
   }
 
@@ -264,43 +330,20 @@ sub pp_acts_cores {
 }
 
 sub pp_acts_syntagmas {
-  my ($self, $acts) = @_;
-  $acts = $self->{acts} unless $acts;
+  my ($self, @syns) = @_;
 
   my $r = "# Actants syntagmas\n";
-  foreach (@$acts) {
-    my ($verb, @list) = ($_->{verb}, @{ $_->{acts} });
+  foreach (@syns) {
+    my ($verb, @list) = ($_->{verb}, @{ $_->{syns} });
 
     $r .= " Verb: $verb->{form}\n";
-    my $i = 1;
     foreach (@list) {
-      $r .= sprintf "  %s: %s\n",
-              "A$i",
-                join(' ', map {$_->{form}} @{ $_->{tokens}});
-      $i++;
+      $r .= sprintf "  = %s\n", join(' ', map {$_->{form}} @$_);
     }
   }
 
   return $r;
 }
-
-sub pp_acts_ranks {
-  my ($self, $ranks) = @_;
-  $ranks = $self->{ranks} unless $ranks;
-
-  my $r = "# Actants cores ranks\n";
-  foreach (@$ranks) {
-    my ($verb, @rank) = ($_->{verb}, @{$_->{rank}} );
-
-    $r .= " Verb: $verb->{form}\n";
-    foreach (@rank) {
-      $r .= sprintf "  %.6f | %s\n", $_->{score}, $_->{token}->{form};
-    }
-  }
-
-  return $r;
-}
-
 
 1;
 
