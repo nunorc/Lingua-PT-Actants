@@ -359,39 +359,34 @@ __END__
     my $actants = $a->actants;  # a list cores per main verb found
 
     # example from the command line
-    $ cat examples/input.txt 
+    $ cat examples/input-1.txt
     1   A       _   DET     DET     _   2   det     _   _
     2   Maria   _   PROPN   PROPN   _   3   nsubj   _   _
     3   tem     _   VERB    VERB    _   0   ROOT    _   _
     4   razão   _   NOUN    NOUN    _   3   dobj    _   _
     5   .       _   PUNCT   PUNCT   _   3   punct   _   _
 
-    $ actants input.txt
+    $ actants examples/input-1.txt
     A Maria tem razão .
-    
-    # Actants syntagmas
-     Verb: tem
-      A1: A Maria
-      A2: razão
     
     # Actants syntagma cores
      Verb: tem
-      + Maria
-      + razão
+      = Maria
+      = razão
     
-    # Actants cores ranks
+    # Actants syntagmas
      Verb: tem
-      0.533333 | Maria
-      0.466667 | razão
-      0.000000 | A
-      0.000000 | tem
-      0.000000 | .
+      = A Maria
+      = razão
+
 
 =head1 DESCRIPTION
 
-This module implements an algorithm that computes a sorted rank of tokens
-where the score measures the propensity of the token being an actant
-for the verb to which is related.
+This module implements an algorithm that computes the actants, and
+corresponding syntagmas, for a sentence.
+
+For a complete example visit this
+L<page|http://norma-simplex.nrc.pt/docs/acts-1.html>.
 
 =method new
 
@@ -403,15 +398,19 @@ Returns the original text.
 
 =method acts_cores
 
-Compute the core (a token) of the actants syntagmas as rank sorted by score.
+Compute the core (a token) of the actants syntagmas.
 
-=method pp_acts_cores
+=method acts_syntagmas
 
-Pretty print actants cores, mainly to be used by the command line interface.
+Given the actants cores compute the full syntagma (phrase) for each core.
 
 =method actants
 
 Compute actants for a sentence, returns a list of actants found.
+
+=method pp_acts_cores
+
+Pretty print actants cores, mainly to be used by the command line interface.
 
 =method pp_acts_syntagmas
 
@@ -419,5 +418,9 @@ Pretty print actants syntagmas, mainly to be used by the command line interface.
 
 =head1 ACKNOWLEDGEMENTS
 
-This work is partially supported by the "Programa Operacional da Região Norte", NORTE2020, in the context of project NORTE-01-0145-FEDER-000037.
+This work is a result of the project “SmartEGOV: Harnessing EGOV for Smart
+Governance (Foundations, methods, Tools) / NORTE-01-0145-FEDER-000037”,
+supported by Norte Portugal Regional Operational Programme (NORTE 2020),
+under the PORTUGAL 2020 Partnership Agreement, through the European Regional
+Development Fund (EFDR).
 
