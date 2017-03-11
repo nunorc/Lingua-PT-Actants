@@ -24,7 +24,7 @@ foreach (2 .. 4) {
   my @syns = $o->acts_syns(@cores);
   my @simple = $o->syns_simple(@syns);
   ok( scalar(@simple) == 1, 'one verb only' );
-  my ($k, $v) = each shift @simple;
+  my ($k, $v) = each %{ shift @simple };
   ok( scalar(@$v) == 2, 'two actants' );
   ok( $k eq $verb, 'verb is _apresenta_' );
   ok( $v->[0] eq 'Cada cidadão', 'first actant is _Cada cidadão_');
